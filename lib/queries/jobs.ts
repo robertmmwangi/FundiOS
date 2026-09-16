@@ -9,6 +9,10 @@ export type JobInput = {
   description?: string | null;
   status?: JobStatus;
   progress_percent?: number;
+  quote_vat_inclusive?: boolean;
+  quote_subtotal?: number;
+  quote_vat_total?: number;
+  quote_total?: number;
 };
 
 export type JobFilters = {
@@ -83,6 +87,28 @@ export async function updateJobStatus(id: string, status: JobStatus): Promise<Jo
 
 export async function updateJobProgress(id: string, percent: number): Promise<Job> {
   return updateJob(id, { progress_percent: percent });
+}
+
+export async function lockQuote(jobId: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase.from("jobs").update({ quote_locked: true }).eq("id", jobId);
+
+  if (error) {
+    throw new Error(`Unable to lock quote: ${error.message}`);
+  }
+}
+
+export async function unlockQuote(jobId: string): Promise<void> {
+  const supabase = createClient();
+  const { error } = await supabase
+    .from("jobs")
+    .update({ quote_locked: false })
+    .eq("id", jobId)
+    .neq("status", "paid");
+
+  if (error) {
+    throw new Error(`Unable to unlock quote: ${error.message}`);
+  }
 }
 
 export async function deleteJob(id: string): Promise<void> {

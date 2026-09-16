@@ -15,6 +15,37 @@ export type PaymentUpdate = Partial<
   Pick<Payment, "amount" | "method" | "reference" | "note" | "paid_at">
 >;
 
+export async function createRefund(input: {
+  job_id: string;
+  amount: number;
+  method?: PaymentMethod;
+  reference?: string | null;
+  reason: string;
+}): Promise<Payment> {
+  const supabase = createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("payments")
+    .insert({
+      job_id: input.job_id,
+      amount: input.amount,
+      method: input.method ?? "cash",
+      reference: input.reference ?? null,
+      refund_reason: input.reason,
+      is_refund: true,
+      user_id: user.id,
+      paid_at: new Date().toISOString(),
+    })
+    .select()
+    .single();
+  if (error) throw new Error(`Unable to create refund: ${error.message}`);
+  return data as Payment;
+}
+
 export async function getPaymentsForJob(jobId: string): Promise<Payment[]> {
   const supabase = createClient();
   const { data, error } = await supabase
@@ -98,12 +129,14 @@ export async function deletePayment(id: string): Promise<void> {
 export async function getJobFinancials(jobId: string): Promise<{
   total_quoted: number;
   total_paid: number;
+  total_refunded: number;
+  net_paid: number;
   balance: number;
 }> {
   const supabase = createClient();
   const [{ data: quoteItems, error: quoteError }, { data: payments, error: paymentError }] = await Promise.all([
     supabase.from("quote_items").select("quantity, unit_price").eq("job_id", jobId),
-    supabase.from("payments").select("amount").eq("job_id", jobId),
+    supabase.from("payments").select("amount, is_refund").eq("job_id", jobId),
   ]);
 
   if (quoteError) {
@@ -118,14 +151,21 @@ export async function getJobFinancials(jobId: string): Promise<{
     (sum, item) => sum + Number(item.quantity) * Number(item.unit_price),
     0,
   );
-  const total_paid = ((payments ?? []) as Pick<Payment, "amount">[]).reduce(
-    (sum, payment) => sum + Number(payment.amount),
+  const total_paid = ((payments ?? []) as Pick<Payment, "amount" | "is_refund">[]).reduce(
+    (sum, payment) => sum + (payment.is_refund ? 0 : Number(payment.amount)),
     0,
   );
+  const total_refunded = ((payments ?? []) as Pick<Payment, "amount" | "is_refund">[]).reduce(
+    (sum, payment) => sum + (payment.is_refund ? Number(payment.amount) : 0),
+    0,
+  );
+  const net_paid = total_paid - total_refunded;
 
   return {
     total_quoted,
     total_paid,
-    balance: total_quoted - total_paid,
+    total_refunded,
+    net_paid,
+    balance: total_quoted - net_paid,
   };
 }

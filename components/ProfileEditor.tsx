@@ -8,6 +8,8 @@ type ProfileRecord = {
   business_name?: string | null;
   trade_type?: string | null;
   phone?: string | null;
+  vat_registered?: boolean | null;
+  vat_number?: string | null;
 };
 
 export function ProfileEditor({ initialProfile }: { initialProfile: ProfileRecord | null }) {
@@ -16,6 +18,8 @@ export function ProfileEditor({ initialProfile }: { initialProfile: ProfileRecor
     business_name: initialProfile?.business_name ?? "",
     trade_type: initialProfile?.trade_type ?? "",
     phone: initialProfile?.phone ?? "",
+    vat_registered: initialProfile?.vat_registered ?? false,
+    vat_number: initialProfile?.vat_number ?? "",
   });
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -49,6 +53,8 @@ export function ProfileEditor({ initialProfile }: { initialProfile: ProfileRecor
         business_name: formData.business_name.trim(),
         trade_type: formData.trade_type.trim(),
         phone: formData.phone.trim(),
+        vat_registered: formData.vat_registered,
+        vat_number: formData.vat_registered ? formData.vat_number.trim() || null : null,
       })
       .eq("id", user.id);
 
@@ -73,9 +79,23 @@ export function ProfileEditor({ initialProfile }: { initialProfile: ProfileRecor
               <p className="mt-1 text-base text-white">{initialProfile?.business_name || "Not set"}</p>
             </div>
             <div>
+              <p className="text-xs uppercase tracking-[0.15em] text-slate-400">VAT</p>
+              <p className="mt-1 text-base text-white">{initialProfile?.vat_registered ? `Registered${initialProfile.vat_number ? ` · ${initialProfile.vat_number}` : ""}` : "Not registered"}</p>
+            </div>
+            <div>
               <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Trade</p>
               <p className="mt-1 text-base text-white">{initialProfile?.trade_type || "Not set"}</p>
             </div>
+            <label className="flex items-center gap-3 text-sm font-medium text-slate-200">
+              <input type="checkbox" checked={formData.vat_registered} onChange={(event) => setFormData((current) => ({ ...current, vat_registered: event.target.checked }))} />
+              VAT registered
+            </label>
+            {formData.vat_registered && (
+              <div>
+                <label htmlFor="vat_number" className="mb-2 block text-sm font-medium text-slate-200">VAT number</label>
+                <input id="vat_number" value={formData.vat_number} onChange={(event) => handleChange("vat_number", event.target.value)} placeholder="P051234567X" className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-sm text-white outline-none transition focus:border-sky-500" />
+              </div>
+            )}
             <div>
               <p className="text-xs uppercase tracking-[0.15em] text-slate-400">Phone</p>
               <p className="mt-1 text-base text-white">{initialProfile?.phone || "Not set"}</p>

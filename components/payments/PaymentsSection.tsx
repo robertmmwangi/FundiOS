@@ -102,13 +102,21 @@ export function PaymentsSection({
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className={`grid gap-3 ${financials?.total_refunded ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
           <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Paid to date</p>
           <p className="mt-2 text-2xl font-bold text-emerald-300">
-            {financialsQuery.isLoading ? "—" : money.format(financials?.total_paid ?? 0)}
+            {financialsQuery.isLoading ? "—" : money.format(financials?.net_paid ?? 0)}
           </p>
         </div>
+        {!!financials?.total_refunded && (
+          <div className="rounded-2xl border border-rose-500/20 bg-rose-500/5 p-4">
+            <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Refunded</p>
+            <p className="mt-2 text-2xl font-bold text-rose-300">
+              {financialsQuery.isLoading ? "—" : money.format(financials.total_refunded)}
+            </p>
+          </div>
+        )}
         <div
           className={`rounded-2xl border p-4 ${
             (financials?.balance ?? 0) > 0
@@ -141,7 +149,7 @@ export function PaymentsSection({
         {payments.map((payment) => (
           <div
             key={payment.id}
-            className="relative flex cursor-pointer items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/40 p-4"
+            className={`relative flex cursor-pointer items-center gap-3 rounded-2xl border p-4 ${payment.is_refund ? "border-rose-500/20 bg-rose-500/5" : "border-slate-800 bg-slate-950/40"}`}
             onClick={() => openEdit(payment)}
           >
             <div className="min-w-0 flex-1">
@@ -154,8 +162,13 @@ export function PaymentsSection({
                   {payment.reference || payment.mpesa_receipt}
                 </p>
               )}
+              {payment.is_refund && payment.refund_reason && (
+                <p className="mt-2 text-xs text-rose-200/80">{payment.refund_reason}</p>
+              )}
             </div>
-            <p className="text-right text-base font-bold text-white">{money.format(payment.amount)}</p>
+            <p className={`text-right text-base font-bold ${payment.is_refund ? "text-rose-300" : "text-white"}`}>
+              {payment.is_refund ? "-" : ""}{money.format(payment.amount)}
+            </p>
             <button
               type="button"
               onClick={(event) => { event.stopPropagation(); setMenuPaymentId(menuPaymentId === payment.id ? null : payment.id); }}

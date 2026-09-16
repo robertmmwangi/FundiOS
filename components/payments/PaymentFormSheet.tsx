@@ -4,7 +4,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
-import { createPayment, updatePayment } from "@/lib/queries/payments";
+import { createPayment, createRefund, updatePayment } from "@/lib/queries/payments";
 import { ACTIVE_PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type Payment, type PaymentMethod } from "@/types";
 
 const schema = z.object({
@@ -13,6 +13,7 @@ const schema = z.object({
   reference: z.string().optional(),
   note: z.string().optional(),
   paid_at: z.string().min(1, "Paid date is required."),
+  reason: z.string().optional(),
 });
 
 type Values = z.infer<typeof schema>;
@@ -29,6 +30,8 @@ export function PaymentFormSheet({
   open,
   jobId,
   balance,
+  initialAmount,
+  mode = "payment",
   payment,
   onClose,
   onSaved,
@@ -36,18 +39,25 @@ export function PaymentFormSheet({
   open: boolean;
   jobId: string;
   balance?: number;
+  initialAmount?: number;
+  mode?: "payment" | "refund";
   payment?: Payment;
   onClose: () => void;
   onSaved?: () => void;
 }) {
   const { register, handleSubmit, setValue, control, reset, formState: { errors, isSubmitting } } = useForm<Values>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema.superRefine((value, context) => {
+      if (mode === "refund" && !value.reason?.trim()) {
+        context.addIssue({ code: z.ZodIssueCode.custom, path: ["reason"], message: "Reason is required." });
+      }
+    })),
     values: {
-      amount: payment ? String(payment.amount) : balance && balance > 0 ? String(balance) : "",
+      amount: payment ? String(payment.amount) : initialAmount && initialAmount > 0 ? String(initialAmount) : balance && balance > 0 ? String(balance) : "",
       method: payment?.method && ACTIVE_PAYMENT_METHODS.includes(payment.method as PaymentMethod) ? payment.method as PaymentMethod : "cash",
       reference: payment?.reference ?? payment?.mpesa_receipt ?? "",
       note: payment?.note ?? "",
       paid_at: payment?.paid_at ? payment.paid_at.slice(0, 10) : today(),
+      reason: "",
     },
   });
   const method = useWatch({ control, name: "method" });
@@ -61,7 +71,9 @@ export function PaymentFormSheet({
       note: values.note?.trim() || null,
       paid_at: new Date(`${values.paid_at}T12:00:00`).toISOString(),
     };
-    if (payment) await updatePayment(payment.id, input);
+    if (mode === "refund") {
+      await createRefund({ job_id: jobId, amount, method: values.method, reference: input.reference, reason: values.reason?.trim() ?? "" });
+    } else if (payment) await updatePayment(payment.id, input);
     else await createPayment({ job_id: jobId, ...input });
     reset();
     onSaved?.();
@@ -74,11 +86,18 @@ export function PaymentFormSheet({
     <div className="fixed inset-0 z-50 bg-slate-950/70" onClick={onClose}>
       <div className="absolute inset-x-0 bottom-0 mx-auto max-w-2xl rounded-t-3xl border border-slate-700 bg-slate-900 p-5 shadow-2xl sm:p-7" onClick={(event) => event.stopPropagation()}>
         <div className="mb-5 flex items-center justify-between">
-          <h2 className="text-xl font-bold text-white">{payment ? "Edit payment" : "Record payment"}</h2>
+          <h2 className="text-xl font-bold text-white">{mode === "refund" ? "Record refund" : payment ? "Edit payment" : "Record payment"}</h2>
           <button type="button" onClick={onClose} className="text-slate-400 hover:text-white" aria-label="Close">×</button>
         </div>
-        <form onSubmit={handleSubmit(submit)} className="space-y-4">
+        {mode === "refund" && (
           <div>
+            <label className="mb-2 block text-sm font-medium text-rose-200">Reason</label>
+            <textarea {...register("reason")} rows={3} placeholder="Why is this refund being issued?" className="w-full rounded-xl border border-rose-500/30 bg-slate-950 px-3 py-3 text-white" />
+            {errors.reason && <p className="mt-1 text-sm text-red-400">{errors.reason.message}</p>}
+          </div>
+        )}
+        <form onSubmit={handleSubmit(submit)} className="space-y-4">
+          <div className={mode === "refund" ? "rounded-xl border border-rose-500/30 bg-rose-500/5 p-3" : ""}>
             <label className="mb-2 block text-sm font-medium text-slate-200">Amount</label>
             <input {...register("amount")} inputMode="decimal" placeholder="KSh 85,000" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white" />
             {errors.amount && <p className="mt-1 text-sm text-red-400">{errors.amount.message}</p>}
@@ -101,7 +120,7 @@ export function PaymentFormSheet({
             <input {...register("paid_at")} type="date" max={today()} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white" />
             {errors.paid_at && <p className="mt-1 text-sm text-red-400">{errors.paid_at.message}</p>}
           </div>
-          <button disabled={isSubmitting} className="w-full rounded-xl bg-sky-500 px-4 py-3 font-semibold text-white disabled:opacity-50">{isSubmitting ? "Saving..." : payment ? "Save changes" : "Record payment"}</button>
+          <button disabled={isSubmitting} className={`w-full rounded-xl px-4 py-3 font-semibold text-white disabled:opacity-50 ${mode === "refund" ? "bg-rose-500" : "bg-sky-500"}`}>{isSubmitting ? "Saving..." : mode === "refund" ? "Record refund" : payment ? "Save changes" : "Record payment"}</button>
         </form>
       </div>
     </div>

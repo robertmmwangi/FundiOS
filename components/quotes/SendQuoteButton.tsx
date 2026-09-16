@@ -55,7 +55,9 @@ export function SendQuoteButton({
         return;
       }
       const quoteUrl = `${window.location.origin}/q/${jobId}`;
-      const message = `Hi ${customerName}, here is your quote from ${businessName} for ${jobTitle}. Total: ${money.format(total)}. View and accept it here: ${quoteUrl}`;
+      const message = job.quote_revision > 0
+        ? `Hi ${customerName}, here is the revised quote (Revision ${job.quote_revision}) from ${businessName} for ${jobTitle}. New total: ${money.format(total)}. View it here: ${quoteUrl}`
+        : `Hi ${customerName}, here is your quote from ${businessName} for ${jobTitle}. Total: ${money.format(total)}. View and accept it here: ${quoteUrl}`;
       window.open(`https://wa.me/${phone}?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
       if (job.status === "enquiry") {
         await updateJobStatus(jobId, "quoted");

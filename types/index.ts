@@ -26,12 +26,48 @@ export interface Job {
   description: string | null;
   status: JobStatus;
   progress_percent: number;
+  quote_revision: number;
+  quote_last_sent_at: string | null;
+  quote_vat_inclusive: boolean;
+  quote_locked: boolean;
+  quote_subtotal: number | null;
+  quote_vat_total: number | null;
+  quote_total: number | null;
   created_at: string;
   updated_at: string;
 }
 
 export interface JobWithCustomer extends Job {
   customer: Pick<Customer, "id" | "name" | "phone">;
+}
+
+export type JobEventType =
+  | "job_created"
+  | "quote_item_added"
+  | "quote_item_updated"
+  | "quote_item_removed"
+  | "quote_sent"
+  | "quote_revised"
+  | "payment_received"
+  | "payment_updated"
+  | "payment_deleted"
+  | "refund_issued"
+  | "status_changed"
+  | "progress_updated"
+  | "material_added"
+  | "material_updated"
+  | "material_removed"
+  | "note_added";
+
+export interface JobEvent {
+  id: string;
+  job_id: string;
+  user_id: string;
+  event_type: JobEventType;
+  description: string;
+  amount: number | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
 }
 
 export interface QuoteItem {
@@ -44,6 +80,25 @@ export interface QuoteItem {
   sort_order: number;
   created_at: string;
   updated_at: string;
+  vat_applicable: boolean;
+  vat_rate: number;
+  price_includes_vat: boolean;
+}
+
+export interface QuoteRevision {
+  id: string;
+  job_id: string;
+  user_id: string;
+  revision: number;
+  snapshot: Array<{
+    description: string;
+    quantity: number;
+    unit_price: number;
+    sort_order: number;
+  }>;
+  total: number;
+  reason: string | null;
+  created_at: string;
 }
 
 export interface PublicQuote {
@@ -53,6 +108,9 @@ export interface PublicQuote {
     description: string | null;
     status: JobStatus;
     created_at: string;
+    quote_revision: number;
+    quote_last_sent_at: string | null;
+    quote_vat_inclusive: boolean;
   };
   items: Array<{
     id: string;
@@ -60,12 +118,17 @@ export interface PublicQuote {
     quantity: number;
     unit_price: number;
     sort_order: number;
+    vat_applicable: boolean;
+    vat_rate: number;
+    price_includes_vat: boolean;
   }>;
   business: {
     business_name: string | null;
     trade_type: string | null;
     logo_url: string | null;
     phone: string | null;
+    vat_registered: boolean;
+    vat_number: string | null;
   };
   customer: {
     name: string;
@@ -100,6 +163,8 @@ export interface Payment {
   paid_at: string;
   created_at: string;
   updated_at: string;
+  is_refund: boolean;
+  refund_reason: string | null;
 }
 
 export interface PaymentWithContext extends Payment {

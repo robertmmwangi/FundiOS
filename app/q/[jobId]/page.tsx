@@ -4,6 +4,7 @@ import { ArrowLeft, Check, MessageCircle } from "lucide-react";
 
 import { DownloadQuoteButton } from "@/components/quotes/DownloadQuoteButton";
 import { getPublicQuote } from "@/lib/queries/public-quote";
+import { calculateQuoteTotals } from "@/lib/vat";
 
 const money = new Intl.NumberFormat("en-KE", {
   style: "currency",
@@ -49,7 +50,8 @@ export default async function PublicQuotePage({
     );
   }
 
-  const total = quote.items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
+  const totals = calculateQuoteTotals(quote.items);
+  const total = totals.total;
   const phone = formatPhone(quote.business.phone);
   const businessName = quote.business.business_name?.trim() || "FundiOS business";
   const canAccept = quote.job.status !== "enquiry";
@@ -96,11 +98,15 @@ export default async function PublicQuotePage({
                       {quote.business.phone}
                     </a>
                   )}
+                  {quote.business.vat_registered && quote.business.vat_number && <p className="mt-1 text-xs text-slate-500">VAT No: {quote.business.vat_number}</p>}
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <p className="text-xs font-bold tracking-[0.2em] text-sky-700">QUOTE</p>
-                <p className="mt-2 text-xs text-slate-500">{formatDate(quote.job.created_at)}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-xs font-bold tracking-[0.2em] text-sky-700">QUOTE</p>
+                  {quote.job.quote_revision > 0 && <span className="rounded-full bg-sky-100 px-2 py-0.5 text-[10px] font-semibold text-sky-700">Revision {quote.job.quote_revision}</span>}
+                </div>
+                <p className="mt-2 text-xs text-slate-500">{formatDate(quote.job.quote_last_sent_at ?? quote.job.created_at)}</p>
               </div>
             </div>
           </div>
@@ -139,13 +145,22 @@ export default async function PublicQuotePage({
                 <tfoot>
                   <tr className="border-t-2 border-slate-200">
                     <td colSpan={3} className="pt-5 text-right text-base font-semibold text-slate-600">
-                      Total
+                      Subtotal
                     </td>
-                    <td className="pt-5 text-right text-xl font-bold text-slate-950">{money.format(total)}</td>
+                    <td className="pt-5 text-right font-semibold text-slate-900">{money.format(totals.subtotal)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={3} className="pt-2 text-right text-sm text-slate-500">VAT</td>
+                    <td className="pt-2 text-right text-sm text-slate-700">{money.format(totals.vat_total)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={3} className="pt-3 text-right text-base font-semibold text-slate-600">Total</td>
+                    <td className="pt-3 text-right text-xl font-bold text-slate-950">{money.format(total)}</td>
                   </tr>
                 </tfoot>
               </table>
             </div>
+            {quote.job.quote_vat_inclusive && <p className="mt-3 text-right text-xs text-slate-500">Total is inclusive of VAT</p>}
 
             <div className="mt-9 flex flex-col gap-3 sm:flex-row print:hidden">
               {whatsappUrl ? (

@@ -16,7 +16,7 @@ export default async function SettingsPage() {
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("business_name, trade_type, phone")
+    .select("business_name, trade_type, phone, vat_registered, vat_number")
     .eq("id", user.id)
     .maybeSingle();
 
