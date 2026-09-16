@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logJobEvent } from "@/lib/queries/job-events";
 import type { Payment, PaymentMethod, PaymentWithContext, QuoteItem, Receipt } from "@/types";
 
 export type PaymentInput = {
@@ -44,7 +45,15 @@ export async function createRefund(input: {
     .select()
     .single();
   if (error) throw new Error(`Unable to create refund: ${error.message}`);
-  return data as Payment;
+  const payment = data as Payment;
+  await logJobEvent({
+    jobId: payment.job_id,
+    eventType: "refund_issued",
+    description: `Refund of KSh ${payment.amount.toLocaleString()} issued via ${payment.method}`,
+    amount: payment.amount,
+    metadata: { method: payment.method, payment_id: payment.id, reason: input.reason },
+  });
+  return payment;
 }
 
 export async function getPaymentsForJob(jobId: string): Promise<Payment[]> {
@@ -116,7 +125,15 @@ export async function createPayment(input: PaymentInput): Promise<Payment> {
     throw new Error(`Unable to create payment: ${error.message}`);
   }
 
-  return data as Payment;
+  const payment = data as Payment;
+  await logJobEvent({
+    jobId: payment.job_id,
+    eventType: "receipt_issued",
+    description: `Receipt ${payment.receipt_number ?? "pending"} issued - KSh ${payment.amount.toLocaleString()} via ${payment.method}`,
+    amount: payment.amount,
+    metadata: { receipt_number: payment.receipt_number, method: payment.method, payment_id: payment.id },
+  });
+  return payment;
 }
 
 export async function updatePayment(id: string, input: PaymentUpdate): Promise<Payment> {
@@ -140,7 +157,14 @@ export async function cancelPayment(id: string, reason: string): Promise<Payment
     .single();
 
   if (error) throw new Error(`Unable to cancel payment: ${error.message}`);
-  return data as Payment;
+  const payment = data as Payment;
+  await logJobEvent({
+    jobId: payment.job_id,
+    eventType: "receipt_cancelled",
+    description: `Receipt ${payment.receipt_number ?? "pending"} cancelled - ${reason}`,
+    metadata: { receipt_number: payment.receipt_number, payment_id: payment.id, reason },
+  });
+  return payment;
 }
 
 export async function deletePayment(id: string): Promise<void> {

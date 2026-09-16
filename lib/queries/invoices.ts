@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/client";
 import { calculateQuoteTotals } from "@/lib/vat";
 import { getJob } from "@/lib/queries/jobs";
 import { getQuoteItems } from "@/lib/queries/quote-items";
+import { logJobEvent } from "@/lib/queries/job-events";
 import type { Invoice, InvoiceItem } from "@/types";
 
 export async function getInvoicesForJob(jobId: string): Promise<Invoice[]> {
@@ -88,7 +89,15 @@ export async function createInvoice(input: { job_id: string; notes?: string }): 
     .single();
 
   if (error) throw new Error(`Unable to create invoice: ${error.message}`);
-  return data as Invoice;
+  const invoice = data as Invoice;
+  await logJobEvent({
+    jobId: input.job_id,
+    eventType: "invoice_issued",
+    description: `Invoice ${invoice.invoice_number} issued - KSh ${invoice.total.toLocaleString()}`,
+    amount: invoice.total,
+    metadata: { invoice_id: invoice.id, invoice_number: invoice.invoice_number },
+  });
+  return invoice;
 }
 
 export async function cancelInvoice(invoiceId: string, reason: string): Promise<Invoice> {
@@ -101,7 +110,14 @@ export async function cancelInvoice(invoiceId: string, reason: string): Promise<
     .single();
 
   if (error) throw new Error(`Unable to cancel invoice: ${error.message}`);
-  return data as Invoice;
+  const invoice = data as Invoice;
+  await logJobEvent({
+    jobId: invoice.job_id,
+    eventType: "invoice_cancelled",
+    description: `Invoice ${invoice.invoice_number} cancelled - ${reason}`,
+    metadata: { invoice_id: invoice.id, invoice_number: invoice.invoice_number, reason },
+  });
+  return invoice;
 }
 
 export async function getInvoice(invoiceId: string): Promise<Invoice | null> {

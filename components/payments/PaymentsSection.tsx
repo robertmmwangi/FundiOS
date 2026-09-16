@@ -2,37 +2,19 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertTriangle, MoreHorizontal, Plus } from "lucide-react";
+import { AlertTriangle, Plus } from "lucide-react";
 
-import { deletePayment, getJobFinancials, getPaymentsForJob } from "@/lib/queries/payments";
-import { PAYMENT_METHOD_LABELS, type Payment, type JobStatus } from "@/types";
+import { getJobFinancials, getReceiptsForJob } from "@/lib/queries/payments";
+import { type Payment, type JobStatus, type Receipt } from "@/types";
 import { PaymentFormSheet } from "@/components/payments/PaymentFormSheet";
+import { ReceiptRow } from "@/components/payments/ReceiptRow";
+import { CancelReceiptDialog } from "@/components/payments/CancelReceiptDialog";
 
 const money = new Intl.NumberFormat("en-KE", {
   style: "currency",
   currency: "KES",
   maximumFractionDigits: 0,
 });
-
-function relativeTime(value: string) {
-  const seconds = Math.round((Date.now() - new Date(value).getTime()) / 1000);
-  if (seconds < 60) return "Just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} ${minutes === 1 ? "minute" : "minutes"} ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} ${hours === 1 ? "hour" : "hours"} ago`;
-  const days = Math.floor(hours / 24);
-  if (days < 30) return `${days} ${days === 1 ? "day" : "days"} ago`;
-  const months = Math.floor(days / 30);
-  return `${months} ${months === 1 ? "month" : "months"} ago`;
-}
-
-function methodTone(method: Payment["method"]) {
-  if (method === "mpesa") return "bg-emerald-500/10 text-emerald-300";
-  if (method === "bank") return "bg-sky-500/10 text-sky-300";
-  if (method === "cheque") return "bg-amber-500/10 text-amber-300";
-  return "bg-slate-800 text-slate-300";
-}
 
 export function PaymentsSection({
   jobId,
@@ -47,6 +29,8 @@ export function PaymentsSection({
 }) {
   const queryClient = useQueryClient();
   const [menuPaymentId, setMenuPaymentId] = useState<string | null>(null);
+  const [cancelReceipt, setCancelReceipt] = useState<Receipt | null>(null);
+  const [selectedReceipt, setSelectedReceipt] = useState<Receipt | null>(null);
   const [savedMessage, setSavedMessage] = useState(false);
   const [formOpen, setFormOpen] = useState(() => Boolean(autoOpen || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("payment") === "new")));
   const [editingPayment, setEditingPayment] = useState<Payment | undefined>();
@@ -54,7 +38,7 @@ export function PaymentsSection({
   const [toast, setToast] = useState<string | null>(null);
   const paymentsQuery = useQuery({
     queryKey: ["payments", jobId],
-    queryFn: () => getPaymentsForJob(jobId),
+    queryFn: () => getReceiptsForJob(jobId),
   });
   const financialsQuery = useQuery({
     queryKey: ["job-financials", jobId],
@@ -64,20 +48,6 @@ export function PaymentsSection({
   const financials = financialsQuery.data;
   const overpayment = Math.max((financials?.net_paid ?? 0) - (financials?.total_quoted ?? 0), 0);
   const showDepositHint = jobStatus === "quoted";
-
-  async function removePayment(payment: Payment) {
-    if (!confirm(`Delete this ${money.format(payment.amount)} payment?`)) return;
-    await deletePayment(payment.id);
-    await queryClient.invalidateQueries({ queryKey: ["payments", jobId] });
-    await queryClient.invalidateQueries({ queryKey: ["job-financials", jobId] });
-    setMenuPaymentId(null);
-  }
-
-  function openEdit(payment: Payment) {
-    setEditingPayment(payment);
-    setFormOpen(true);
-    setMenuPaymentId(null);
-  }
 
   async function refreshAfterSave() {
     await queryClient.invalidateQueries({ queryKey: ["payments", jobId] });
@@ -102,7 +72,7 @@ export function PaymentsSection({
     <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-7">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h2 className="text-xl font-bold text-white">Payments</h2>
+          <h2 className="text-xl font-bold text-white">Receipts</h2>
           <p className="mt-1 text-sm text-slate-400">Track money received for this job.</p>
         </div>
         <button
@@ -169,60 +139,19 @@ export function PaymentsSection({
 
       <div className="mt-5 space-y-3">
         {savedMessage && <p className="rounded-xl border border-emerald-500/20 bg-emerald-500/5 px-3 py-2.5 text-sm text-emerald-300">Payment saved.</p>}
-        {paymentsQuery.isLoading && <p className="text-sm text-slate-400">Loading payments...</p>}
-        {paymentsQuery.error && <p className="text-sm text-red-400">Unable to load payments.</p>}
+        {paymentsQuery.isLoading && <p className="text-sm text-slate-400">Loading receipts...</p>}
+        {paymentsQuery.error && <p className="text-sm text-red-400">Unable to load receipts.</p>}
         {!paymentsQuery.isLoading && !payments.length && (
           <p className="rounded-2xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
-            No payments recorded yet.
+            No receipts recorded yet.
           </p>
         )}
-        {payments.map((payment) => (
-          <div
-            key={payment.id}
-            className={`relative flex cursor-pointer items-center gap-3 rounded-2xl border p-4 ${payment.is_refund ? "border-rose-500/20 bg-rose-500/5" : "border-slate-800 bg-slate-950/40"}`}
-            onClick={() => openEdit(payment)}
-          >
-            <div className="min-w-0 flex-1">
-              <p className="text-sm text-slate-400">{relativeTime(payment.paid_at)}</p>
-              <span className={`mt-2 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${methodTone(payment.method)}`}>
-                {PAYMENT_METHOD_LABELS[payment.method]}
-              </span>
-              {(payment.reference || payment.mpesa_receipt) && (
-                <p className="mt-2 truncate text-xs text-slate-500">
-                  {payment.reference || payment.mpesa_receipt}
-                </p>
-              )}
-              {payment.is_refund && payment.refund_reason && (
-                <p className="mt-2 text-xs text-rose-200/80">{payment.refund_reason}</p>
-              )}
-            </div>
-            <p className={`text-right text-base font-bold ${payment.is_refund ? "text-rose-300" : "text-white"}`}>
-              {payment.is_refund ? "-" : ""}{money.format(payment.amount)}
-            </p>
-            <button
-              type="button"
-              onClick={(event) => { event.stopPropagation(); setMenuPaymentId(menuPaymentId === payment.id ? null : payment.id); }}
-              className="rounded-lg p-2 text-slate-500 hover:bg-slate-800 hover:text-white"
-              aria-label="Payment actions"
-            >
-              <MoreHorizontal size={18} />
-            </button>
-            {menuPaymentId === payment.id && (
-              <div className="absolute right-3 top-12 z-10 rounded-xl border border-slate-700 bg-slate-900 p-1 shadow-xl">
-                <button
-                  type="button"
-                  onClick={() => void removePayment(payment)}
-                  className="rounded-lg px-3 py-2 text-sm text-red-300 hover:bg-red-500/10"
-                >
-                  Delete payment
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
+        {payments.map((payment) => <ReceiptRow key={payment.id} receipt={payment} menuOpen={menuPaymentId === payment.id} onOpen={() => { setSelectedReceipt(payment); setMenuPaymentId(null); }} onToggleMenu={() => setMenuPaymentId(menuPaymentId === payment.id ? null : payment.id)} onCancel={() => setCancelReceipt(payment)} />)}
       </div>
       <PaymentFormSheet open={formOpen} jobId={jobId} balance={financials?.balance} outstandingBalance={financials?.balance} payment={editingPayment} onClose={() => { setFormOpen(false); setEditingPayment(undefined); }} onSaved={() => void refreshAfterSave()} />
       <PaymentFormSheet open={refundOpen} jobId={jobId} mode="refund" initialAmount={overpayment} outstandingBalance={financials?.balance} onClose={() => setRefundOpen(false)} onSaved={() => void refreshAfterSave()} />
+      {selectedReceipt && <div className="fixed inset-0 z-40 bg-slate-950/70 p-4" role="dialog" aria-modal="true" aria-labelledby="receipt-detail-title" onClick={() => setSelectedReceipt(null)}><div className="mx-auto mt-[15vh] max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-2xl" onClick={(event) => event.stopPropagation()}><div className="flex items-start justify-between gap-4"><div><p className="font-mono text-sm text-slate-400">{selectedReceipt.receipt_number ?? "Receipt pending"}</p><h2 id="receipt-detail-title" className="mt-1 text-xl font-bold text-white">{money.format(selectedReceipt.amount)}</h2></div><button type="button" onClick={() => setSelectedReceipt(null)} className="text-slate-400 hover:text-white" aria-label="Close receipt details">×</button></div><p className="mt-3 text-sm text-slate-300">{new Date(selectedReceipt.paid_at).toLocaleDateString()} · {selectedReceipt.method}</p>{selectedReceipt.cancelled_reason && <p className="mt-3 rounded-xl bg-rose-500/10 p-3 text-sm text-rose-200">Cancelled: {selectedReceipt.cancelled_reason}</p>}<div className="mt-5 flex gap-2"><button type="button" onClick={() => setToast("Receipt PDF download coming soon")} className="flex-1 rounded-xl border border-slate-700 px-3 py-2.5 text-sm font-semibold text-slate-200">Download PDF</button>{!selectedReceipt.cancelled_at && <button type="button" onClick={() => { setCancelReceipt(selectedReceipt); setSelectedReceipt(null); }} className="flex-1 rounded-xl bg-rose-500 px-3 py-2.5 text-sm font-semibold text-white">Cancel receipt</button>}</div></div></div>}
+      {cancelReceipt && <CancelReceiptDialog paymentId={cancelReceipt.id} receiptNumber={cancelReceipt.receipt_number ?? "pending"} amount={cancelReceipt.amount} onClose={() => setCancelReceipt(null)} onCancelled={() => { setCancelReceipt(null); setToast(`Receipt ${cancelReceipt.receipt_number ?? "pending"} cancelled`); window.setTimeout(() => setToast(null), 3000); }} />}
       {toast && <div role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-xl">{toast}</div>}
     </section>
   );

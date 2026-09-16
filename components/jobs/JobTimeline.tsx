@@ -13,6 +13,8 @@ import {
   Send,
   Trash2,
   Wrench,
+  Receipt,
+  XCircle,
 } from "lucide-react";
 
 import { getJobTimeline } from "@/lib/queries/job-events";
@@ -26,9 +28,13 @@ const eventPresentation: Record<JobEventType, { label: string; color: string; ic
   quote_item_removed: { label: "Quote item deleted", color: "text-rose-300 bg-rose-500/15", icon: Trash2 },
   quote_sent: { label: "Quote sent", color: "text-cyan-300 bg-cyan-500/15", icon: Send },
   quote_revised: { label: "Quote revised", color: "text-amber-300 bg-amber-500/15", icon: Pencil },
+  invoice_issued: { label: "Invoice issued", color: "text-sky-300 bg-sky-500/15", icon: FileText },
+  invoice_cancelled: { label: "Invoice cancelled", color: "text-rose-300 bg-rose-500/15", icon: XCircle },
   payment_received: { label: "Payment recorded", color: "text-emerald-300 bg-emerald-500/15", icon: Banknote },
   payment_updated: { label: "Payment updated", color: "text-amber-300 bg-amber-500/15", icon: Pencil },
   payment_deleted: { label: "Payment deleted", color: "text-rose-300 bg-rose-500/15", icon: Trash2 },
+  receipt_issued: { label: "Receipt issued", color: "text-emerald-300 bg-emerald-500/15", icon: Receipt },
+  receipt_cancelled: { label: "Receipt cancelled", color: "text-rose-300 bg-rose-500/15", icon: XCircle },
   refund_issued: { label: "Refund recorded", color: "text-rose-300 bg-rose-500/15", icon: Banknote },
   progress_updated: { label: "Progress updated", color: "text-sky-300 bg-sky-500/15", icon: Wrench },
   material_added: { label: "Material added", color: "text-amber-300 bg-amber-500/15", icon: Plus },
@@ -117,6 +123,14 @@ function formatEventDescription(
       const reference = stringValue(metadata, "reference") ?? stringValue(metadata, "mpesa_receipt");
       return `Received ${money.format(amount ?? numberValue(metadata, "amount"))} via ${paymentMethodLabel(stringValue(metadata, "method"))}${reference ? ` (${reference})` : ""}`;
     }
+    case "invoice_issued":
+      return description || `Invoice ${stringValue(metadata, "invoice_number") ?? ""} issued - ${money.format(amount ?? numberValue(metadata, "total"))}`;
+    case "invoice_cancelled":
+      return description || `Invoice ${stringValue(metadata, "invoice_number") ?? ""} cancelled`;
+    case "receipt_issued":
+      return description || `Receipt ${stringValue(metadata, "receipt_number") ?? ""} issued - ${money.format(amount ?? numberValue(metadata, "amount"))} via ${paymentMethodLabel(stringValue(metadata, "method"))}`;
+    case "receipt_cancelled":
+      return description || `Receipt ${stringValue(metadata, "receipt_number") ?? ""} cancelled`;
     case "refund_issued": {
       const reason = stringValue(metadata, "reason") ?? stringValue(metadata, "refund_reason");
       return `Refunded ${money.format(amount ?? numberValue(metadata, "amount"))}${reason ? ` - ${reason}` : ""}`;
