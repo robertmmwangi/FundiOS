@@ -51,3 +51,19 @@ vercel --prod
 - [ ] Install banners work on Android Chrome and iOS Safari
 - [ ] Offline fallback works when DevTools is offline
 - [ ] Production build runs end-to-end
+
+## Stage 2 done checklist
+
+- [ ] profiles, config, subscriptions tables exist with RLS enabled
+- [ ] handle_new_user trigger fires on signup and assigns Founding Member status
+- [ ] founding_program_open auto-flips to false when the 500th member registers
+- [ ] middleware protects (dashboard) routes
+- [ ] unauthenticated users redirect to /login
+- [ ] authenticated users with onboarding_complete = false are forced into /onboarding
+- [ ] login, register, forgot-password, reset-password pages work
+- [ ] onboarding wizard completes and updates the profile row
+- [ ] logo upload writes to Supabase Storage bucket `logos`
+- [ ] /settings shows profile and can sign out
+- [ ] Founding Member banner appears on register with correct count
+- [ ] npm run build passes
+- [ ] Vercel deployment succeeds
