@@ -85,6 +85,53 @@ export async function updateJobStatus(id: string, status: JobStatus): Promise<Jo
   return updateJob(id, { status });
 }
 
+export async function recomputeJobStatus(jobId: string): Promise<Job> {
+  const supabase = createClient();
+  const [jobRes, payRes] = await Promise.all([
+    supabase.from("jobs").select("*").eq("id", jobId).single(),
+    supabase.from("payments").select("amount, is_refund").eq("job_id", jobId),
+  ]);
+
+  if (jobRes.error) throw jobRes.error;
+  if (payRes.error) throw payRes.error;
+
+  const job = jobRes.data as Job;
+  const payments = payRes.data ?? [];
+  const netPaid = payments.reduce(
+    (sum, payment) => sum + (payment.is_refund ? -Number(payment.amount) : Number(payment.amount)),
+    0,
+  );
+  const nonRefundCount = payments.filter((payment) => !payment.is_refund).length;
+  const paymentDrivenStatuses: JobStatus[] = ["quoted", "deposit_paid", "invoiced", "paid"];
+  let expectedStatus = job.status;
+
+  if (paymentDrivenStatuses.includes(job.status)) {
+    const quoteTotal = Number(job.quote_total ?? 0);
+
+    if (job.status === "paid" && (quoteTotal === 0 || netPaid < quoteTotal)) {
+      expectedStatus = "invoiced";
+    } else if (job.status === "deposit_paid" && nonRefundCount === 0) {
+      expectedStatus = "quoted";
+    } else if (job.status === "quoted" && nonRefundCount > 0) {
+      expectedStatus = "deposit_paid";
+    } else if (job.status === "invoiced" && quoteTotal > 0 && netPaid >= quoteTotal) {
+      expectedStatus = "paid";
+    }
+  }
+
+  if (expectedStatus === job.status) return job;
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .update({ status: expectedStatus })
+    .eq("id", jobId)
+    .select()
+    .single();
+
+  if (error) throw error;
+  return data as Job;
+}
+
 export async function updateJobProgress(id: string, percent: number): Promise<Job> {
   return updateJob(id, { progress_percent: percent });
 }
