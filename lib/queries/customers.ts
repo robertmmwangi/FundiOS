@@ -32,7 +32,19 @@ export async function getCustomer(id: string): Promise<Customer> {
 
 export async function createCustomer(input: CustomerInput): Promise<Customer> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("customers").insert(input).select().single();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  const { data, error } = await supabase
+    .from("customers")
+    .insert({ ...input, user_id: user.id })
+    .select()
+    .single();
 
   if (error) {
     throw new Error(`Unable to create customer: ${error.message}`);

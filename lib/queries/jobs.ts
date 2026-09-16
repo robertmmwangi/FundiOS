@@ -45,7 +45,19 @@ export async function getJob(id: string): Promise<JobWithCustomer> {
 
 export async function createJob(input: JobInput): Promise<Job> {
   const supabase = createClient();
-  const { data, error } = await supabase.from("jobs").insert(input).select().single();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  const { data, error } = await supabase
+    .from("jobs")
+    .insert({ ...input, user_id: user.id })
+    .select()
+    .single();
 
   if (error) {
     throw new Error(`Unable to create job: ${error.message}`);
