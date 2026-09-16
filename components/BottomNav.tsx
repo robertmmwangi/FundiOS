@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { BarChart3, Briefcase, Home, Plus, Wallet, X } from "lucide-react";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { BarChart3, Briefcase, Home, Plus, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 const tabs = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
@@ -14,7 +14,22 @@ const tabs = [
 
 export function BottomNav() {
   const pathname = usePathname();
+  const router = useRouter();
   const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (!open) return;
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [open]);
+
+  function goTo(href: string) {
+    setOpen(false);
+    router.push(href);
+  }
+
   return (
     <>
       {open && (
@@ -24,8 +39,13 @@ export function BottomNav() {
               Create new
               <button aria-label="Close" onClick={() => setOpen(false)}><X size={18} /></button>
             </div>
-            <Link href="/jobs/new" className="block rounded-xl p-3 text-slate-100 hover:bg-slate-700">New Job</Link>
-            <Link href="/customers?new=1" className="block rounded-xl p-3 text-slate-100 hover:bg-slate-700">New Customer</Link>
+            <button type="button" onClick={() => goTo("/jobs/new")} className="block w-full rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700">New Job</button>
+            <button type="button" onClick={() => goTo("/customers?new=1")} className="block w-full rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700">New Customer</button>
+            <div className="my-2 border-t border-slate-700 pt-2">
+              <p className="px-3 pb-1 text-xs uppercase tracking-wider text-slate-500">Money</p>
+              <button type="button" onClick={() => goTo("/finance?new=income")} className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700"><TrendingUp size={18} className="text-emerald-400" />Record Income</button>
+              <button type="button" onClick={() => goTo("/finance?new=expense")} className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700"><TrendingDown size={18} className="text-red-400" />Record Expense</button>
+            </div>
           </div>
         </div>
       )}
