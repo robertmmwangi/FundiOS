@@ -37,6 +37,7 @@ export function QuoteSection({
   onSent,
   jobStatus,
   quoteVatInclusive = false,
+  showSendButton = true,
 }: {
   jobId: string;
   customerPhone: string | null | undefined;
@@ -45,6 +46,7 @@ export function QuoteSection({
   onSent?: () => void;
   jobStatus: import("@/types").JobStatus;
   quoteVatInclusive?: boolean;
+  showSendButton?: boolean;
 }) {
   const queryClient = useQueryClient();
   const [tradeType, setTradeType] = useState<string | null>(null);
@@ -280,7 +282,7 @@ export function QuoteSection({
         <div className="text-right text-sm text-slate-300">{totals.vat_total > 0 && <><p>Subtotal: {money.format(totals.subtotal)}</p><p>VAT: {money.format(totals.vat_total)}</p></>}<p className="mt-1 text-lg font-bold text-white">Total: {money.format(total)}</p></div>
       </div>
       {vatRegistered && <label className="mt-4 inline-flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={vatInclusive} onChange={(event) => { setVatInclusive(event.target.checked); void updateJob(jobId, { quote_vat_inclusive: event.target.checked }); }} /> Show prices as VAT inclusive</label>}
-      <div className="mt-4 border-t border-slate-800 pt-4">
+      {showSendButton && <div className="mt-4 border-t border-slate-800 pt-4">
         <SendQuoteButton
           jobId={jobId}
           customerPhone={customerPhone}
@@ -292,7 +294,7 @@ export function QuoteSection({
           jobStatus={jobStatus}
           hasValidItems={hasValidItems}
         />
-      </div>
+      </div>}
       {overpaymentDialogOpen && mutationError && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-labelledby="quote-paid-dialog-title">
           <div className="w-full max-w-md rounded-2xl border border-amber-500/30 bg-slate-900 p-6 shadow-2xl">
