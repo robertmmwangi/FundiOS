@@ -27,12 +27,14 @@ export function QuoteSection({
   customerName,
   jobTitle,
   onSent,
+  jobStatus,
 }: {
   jobId: string;
   customerPhone: string | null | undefined;
   customerName: string;
   jobTitle: string;
   onSent?: () => void;
+  jobStatus: import("@/types").JobStatus;
 }) {
   const queryClient = useQueryClient();
   const [tradeType, setTradeType] = useState<string | null>(null);
@@ -56,6 +58,7 @@ export function QuoteSection({
 
   const presets = getPresetsForTrade(tradeType);
   const total = items.reduce((sum, item) => sum + Number(item.quantity) * Number(item.unit_price), 0);
+  const hasValidItems = items.some((item) => item.description.trim() && Number(item.quantity) > 0 && Number(item.unit_price) > 0);
 
   const changeItem = (item: QuoteItem, field: "description" | "quantity" | "unit_price", value: string) => {
     dirtyItems.current.add(item.id);
@@ -90,7 +93,7 @@ export function QuoteSection({
   };
 
   return (
-    <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-7">
+    <section id="quote-section" className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-7">
       <div className="mb-5 flex items-center justify-between">
         <div>
           <h2 className="text-xl font-bold text-white">Quote</h2>
@@ -129,19 +132,19 @@ export function QuoteSection({
         <button type="button" onClick={() => void addItem()} className="rounded-xl border border-sky-500/60 px-4 py-2.5 text-sm font-semibold text-sky-300 hover:bg-sky-500/10">Add item</button>
         <p className="text-right text-lg font-bold text-white">Total: {money.format(total)}</p>
       </div>
-      {items.length > 0 && (
-        <div className="mt-4 border-t border-slate-800 pt-4">
-          <SendQuoteButton
-            jobId={jobId}
-            customerPhone={customerPhone}
-            customerName={customerName}
-            businessName={businessName}
-            total={total}
-            jobTitle={jobTitle}
-            onSent={onSent}
-          />
-        </div>
-      )}
+      <div className="mt-4 border-t border-slate-800 pt-4">
+        <SendQuoteButton
+          jobId={jobId}
+          customerPhone={customerPhone}
+          customerName={customerName}
+          businessName={businessName}
+          total={total}
+          jobTitle={jobTitle}
+          onSent={onSent}
+          jobStatus={jobStatus}
+          hasValidItems={hasValidItems}
+        />
+      </div>
     </section>
   );
 }
