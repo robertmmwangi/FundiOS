@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   ArrowLeft,
@@ -12,6 +12,7 @@ import {
   Hammer,
   HardHat,
   MonitorSmartphone,
+  MoreHorizontal,
   Paintbrush,
   Palette,
   PartyPopper,
@@ -45,6 +46,7 @@ const tradeOptions = [
   { label: "Cleaning", icon: SprayCan },
   { label: "AC technician", icon: Wind },
   { label: "Appliance repair", icon: Settings2 },
+  { label: "Other", value: "other", icon: MoreHorizontal },
 ] as const;
 
 function normalizePhone(raw: string) {
@@ -71,13 +73,25 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [customTradeType, setCustomTradeType] = useState("");
+  const customTradeInputRef = useRef<HTMLInputElement>(null);
 
   const normalizedPhone = useMemo(() => normalizePhone(phone), [phone]);
+  const savedTradeType =
+    tradeType === "other" && customTradeType.trim()
+      ? `other:${customTradeType.trim()}`
+      : tradeType;
+
+  useEffect(() => {
+    if (step === 2 && tradeType === "other") {
+      customTradeInputRef.current?.focus();
+    }
+  }, [step, tradeType]);
 
   const validation = [
     businessName.trim().length >= 2,
     normalizedPhone.length > 0,
-    Boolean(tradeType),
+    Boolean(tradeType) && (tradeType !== "other" || customTradeType.trim().length >= 2),
     true,
   ];
   const currentValid = validation[step];
@@ -132,7 +146,7 @@ export default function OnboardingPage() {
         .update({
           business_name: businessName.trim(),
           phone: normalizedPhone,
-          trade_type: tradeType,
+          trade_type: savedTradeType,
           logo_url: logoUrl,
           onboarding_complete: true,
         })
@@ -205,13 +219,15 @@ export default function OnboardingPage() {
         {step === 2 && (
           <div>
             <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {tradeOptions.map(({ label, icon: Icon }) => {
-                const selected = tradeType === label;
+              {tradeOptions.map((option) => {
+                const tradeValue = "value" in option ? option.value : option.label;
+                const { label, icon: Icon } = option;
+                const selected = tradeType === tradeValue;
                 return (
                   <button
                     key={label}
                     type="button"
-                    onClick={() => setTradeType(label)}
+                    onClick={() => setTradeType(tradeValue)}
                     className={`flex min-h-28 flex-col items-center justify-center rounded-2xl border p-3 text-center transition ${
                       selected
                         ? "border-sky-500 bg-sky-500/10 text-sky-200"
@@ -224,6 +240,23 @@ export default function OnboardingPage() {
                 );
               })}
             </div>
+            {tradeType === "other" && (
+              <div className="mt-4">
+                <label htmlFor="custom-trade-type" className="mb-2 block text-sm font-medium text-slate-200">
+                  Tell us what you do
+                </label>
+                <input
+                  ref={customTradeInputRef}
+                  id="custom-trade-type"
+                  value={customTradeType}
+                  onChange={(event) => setCustomTradeType(event.target.value)}
+                  placeholder="What do you do?"
+                  maxLength={50}
+                  required
+                  className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white outline-none transition focus:border-sky-500"
+                />
+              </div>
+            )}
           </div>
         )}
 
@@ -240,7 +273,7 @@ export default function OnboardingPage() {
               </div>
               <div className="flex items-center justify-between pt-3">
                 <span className="text-slate-200">Trade type</span>
-                <span className="font-medium text-slate-100">{tradeType}</span>
+                <span className="font-medium text-slate-100">{savedTradeType}</span>
               </div>
             </div>
 
@@ -255,7 +288,7 @@ export default function OnboardingPage() {
                 onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)}
                 className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 file:mr-3 file:rounded-lg file:border-0 file:bg-sky-500 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
               />
-              {logoFile && <p className="mt-2 text-sm text-slate-300">Selected: {logoFile.name}</p>}
+              {logoFile && <p className="mt-2 text-sm text-slate-200">Selected: {logoFile.name}</p>}
             </div>
           </div>
         )}
