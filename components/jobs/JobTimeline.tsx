@@ -1,12 +1,10 @@
 "use client";
 
-import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import {
   Activity,
   Banknote,
   Check,
-  ChevronDown,
   ClipboardList,
   FileText,
   Loader2,
@@ -56,8 +54,96 @@ function relativeTime(value: string) {
   return "just now";
 }
 
+const money = new Intl.NumberFormat("en-KE", {
+  style: "currency",
+  currency: "KES",
+  maximumFractionDigits: 0,
+});
+
+const statusLabels: Record<string, string> = {
+  enquiry: "Enquiry",
+  quoted: "Quoted",
+  deposit_paid: "Deposit paid",
+  in_progress: "In progress",
+  completed: "Completed",
+  invoiced: "Invoiced",
+  paid: "Paid",
+};
+
+function metadataValue(metadata: Record<string, unknown> | null, key: string) {
+  return metadata?.[key];
+}
+
+function numberValue(metadata: Record<string, unknown> | null, key: string, fallback = 0) {
+  const value = Number(metadataValue(metadata, key));
+  return Number.isFinite(value) ? value : fallback;
+}
+
+function stringValue(metadata: Record<string, unknown> | null, key: string) {
+  const value = metadataValue(metadata, key);
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function paymentMethodLabel(value: string | null) {
+  if (!value) return "payment method";
+  return value === "mpesa" ? "M-Pesa" : value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+function formatEventDescription(
+  eventType: JobEventType,
+  description: string,
+  metadata: Record<string, unknown> | null,
+  amount: number | null,
+) {
+  const itemDescription = stringValue(metadata, "description");
+  const quantity = numberValue(metadata, "quantity");
+  const unitPrice = numberValue(metadata, "unit_price");
+  const formattedItem = itemDescription && quantity > 0 && unitPrice > 0
+    ? `${itemDescription}: ${quantity} × ${money.format(unitPrice)}`
+    : itemDescription;
+
+  switch (eventType) {
+    case "job_created":
+      return "Job created";
+    case "quote_item_added":
+      return itemDescription && quantity > 0 && unitPrice > 0
+        ? `Added ${itemDescription} (${quantity} × ${money.format(unitPrice)}) to the quote`
+        : description;
+    case "quote_item_updated":
+      return formattedItem ? `Quote updated - ${formattedItem}` : description;
+    case "quote_item_removed":
+      return itemDescription ? `Removed ${itemDescription} from the quote` : description;
+    case "payment_received": {
+      const reference = stringValue(metadata, "reference") ?? stringValue(metadata, "mpesa_receipt");
+      return `Received ${money.format(amount ?? numberValue(metadata, "amount"))} via ${paymentMethodLabel(stringValue(metadata, "method"))}${reference ? ` (${reference})` : ""}`;
+    }
+    case "refund_issued": {
+      const reason = stringValue(metadata, "reason") ?? stringValue(metadata, "refund_reason");
+      return `Refunded ${money.format(amount ?? numberValue(metadata, "amount"))}${reason ? ` - ${reason}` : ""}`;
+    }
+    case "status_changed": {
+      const from = stringValue(metadata, "from_status") ?? stringValue(metadata, "old_status");
+      const to = stringValue(metadata, "to_status") ?? stringValue(metadata, "new_status");
+      return from && to ? `Status moved from ${statusLabels[from] ?? from} to ${statusLabels[to] ?? to}` : description;
+    }
+    case "material_added": {
+      const supplier = stringValue(metadata, "supplier") ?? stringValue(metadata, "vendor");
+      return itemDescription && quantity > 0
+        ? `Bought ${quantity} × ${itemDescription}${supplier ? ` from ${supplier}` : ""}${amount !== null ? ` - ${money.format(amount)}` : ""}`
+        : description;
+    }
+    case "quote_sent":
+    case "quote_revised": {
+      const revision = numberValue(metadata, "revision");
+      const total = amount ?? numberValue(metadata, "total");
+      return `Quote ${eventType === "quote_sent" ? "sent" : "revised"} - ${money.format(total)}${revision > 0 ? ` (Revision ${revision})` : ""}`;
+    }
+    default:
+      return description || eventPresentation[eventType]?.label || "Activity";
+  }
+}
+
 export function JobTimeline({ jobId }: { jobId: string }) {
-  const [expanded, setExpanded] = useState<string | null>(null);
   const { data: events = [], isLoading, error } = useQuery({
     queryKey: ["job-timeline", jobId],
     queryFn: () => getJobTimeline(jobId),
@@ -80,14 +166,13 @@ export function JobTimeline({ jobId }: { jobId: string }) {
             {events.map((event) => {
               const presentation = eventPresentation[event.event_type] ?? { label: "Activity", color: "text-slate-300 bg-slate-700", icon: Check };
               const Icon = presentation.icon;
-              const isExpanded = expanded === event.id;
               return (
                 <div key={event.id} className="relative flex gap-3">
                   <div className={`z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full ${presentation.color}`}><Icon size={15} /></div>
-                  <button type="button" onClick={() => setExpanded(isExpanded ? null : event.id)} className="mb-1 min-w-0 flex-1 rounded-xl p-2 text-left hover:bg-slate-800/60">
-                    <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-semibold text-slate-200">{presentation.label}</p><p className="mt-0.5 text-sm text-slate-400">{event.description}</p></div><span className="flex shrink-0 items-center gap-1 text-xs text-slate-500">{relativeTime(event.created_at)}<ChevronDown size={14} className={`transition-transform ${isExpanded ? "rotate-180" : ""}`} /></span></div>
-                    {isExpanded && event.metadata && <pre className="mt-3 overflow-x-auto rounded-lg bg-slate-950/80 p-3 text-xs leading-5 text-slate-400">{JSON.stringify(event.metadata, null, 2)}</pre>}
-                  </button>
+                  <div className="mb-1 flex min-w-0 flex-1 items-start justify-between gap-3 rounded-xl p-2">
+                    <p className="text-sm text-slate-300">{formatEventDescription(event.event_type, event.description, event.metadata, event.amount)}</p>
+                    <span className="shrink-0 text-xs text-slate-500">{relativeTime(event.created_at)}</span>
+                  </div>
                 </div>
               );
             })}

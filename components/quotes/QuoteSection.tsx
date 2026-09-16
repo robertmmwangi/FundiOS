@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { Trash2 } from "lucide-react";
+import { Save, Trash2, X } from "lucide-react";
 
 import { getPresetsForTrade } from "@/lib/quote-presets";
 import { createClient } from "@/lib/supabase/client";
@@ -56,11 +56,11 @@ export function QuoteSection({
   const [mutationError, setMutationError] = useState<QuoteBelowPaidError | null>(null);
   const [overpaymentDialogOpen, setOverpaymentDialogOpen] = useState(false);
   const [refundFormOpen, setRefundFormOpen] = useState(false);
-  const [editing, setEditing] = useState(jobStatus === "enquiry");
+  const [editing, setEditing] = useState(false);
+  const [draftItems, setDraftItems] = useState<QuoteItem[]>([]);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [savingRevision, setSavingRevision] = useState(false);
   const retryRef = useRef<(() => Promise<void>) | null>(null);
-  const dirtyItems = useRef(new Set<string>());
   const { data: items = [], isLoading, error } = useQuery({
     queryKey: ["quote-items", jobId],
     queryFn: () => getQuoteItems(jobId),
@@ -83,9 +83,10 @@ export function QuoteSection({
   }, []);
 
   const presets = getPresetsForTrade(tradeType);
-  const totals = calculateQuoteTotals(items);
+  const displayedItems = editing ? draftItems : items;
+  const totals = calculateQuoteTotals(displayedItems);
   const total = totals.total;
-  const hasValidItems = items.some((item) => item.description.trim() && Number(item.quantity) > 0 && Number(item.unit_price) > 0);
+  const hasValidItems = items.length > 0 && items.every((item) => item.description.trim() && Number(item.quantity) > 0 && Number(item.unit_price) > 0);
 
   const persistTotals = (nextItems: QuoteItem[]) => {
     const nextTotals = calculateQuoteTotals(nextItems);
@@ -96,121 +97,93 @@ export function QuoteSection({
     });
   };
 
+  const startEditing = () => {
+    setDraftItems(items.map((item) => ({ ...item })));
+    setEditing(true);
+  };
+
+  const cancelEditing = () => {
+    setDraftItems([]);
+    setEditing(false);
+    setMutationError(null);
+  };
+
   const changeItem = (item: QuoteItem, field: "description" | "quantity" | "unit_price" | "vat_applicable" | "vat_rate" | "price_includes_vat", value: string | boolean) => {
     setMutationError(null);
-    dirtyItems.current.add(item.id);
-    queryClient.setQueryData<QuoteItem[]>(["quote-items", jobId], (current = []) =>
+    setDraftItems((current) =>
       current.map((currentItem) =>
         currentItem.id === item.id
           ? { ...currentItem, [field]: typeof value === "boolean" || field === "description" ? value : Number(value) || 0 }
           : currentItem,
       ),
     );
-    window.setTimeout(() => {
-      if (!dirtyItems.current.has(item.id)) return;
-      const current = queryClient.getQueryData<QuoteItem[]>(["quote-items", jobId])?.find(({ id }) => id === item.id);
-      if (!current) return;
-      void updateQuoteItem(item.id, {
-        description: current.description,
-        quantity: Number(current.quantity),
-        unit_price: Number(current.unit_price),
-        vat_applicable: current.vat_applicable,
-        vat_rate: Number(current.vat_rate ?? VAT_STANDARD),
-        price_includes_vat: current.price_includes_vat,
-      }).then(() => {
-        dirtyItems.current.delete(item.id);
-        persistTotals(queryClient.getQueryData<QuoteItem[]>(["quote-items", jobId]) ?? []);
-        void logJobEvent({
-          jobId,
-          eventType: "quote_item_updated",
-          description: `Updated “${current.description || "Untitled item"}”`,
-          metadata: { quote_item_id: current.id, description: current.description, quantity: current.quantity, unit_price: current.unit_price },
-        }).catch(() => undefined);
-      }).catch((error: unknown) => {
-        if (error instanceof QuoteBelowPaidError) {
-          retryRef.current = async () => {
-            await updateQuoteItem(item.id, {
-              description: current.description,
-              quantity: Number(current.quantity),
-              unit_price: Number(current.unit_price),
-            });
-            dirtyItems.current.delete(item.id);
-          };
-          setMutationError(error);
-          setOverpaymentDialogOpen(true);
-        }
-      });
-    }, 500);
   };
 
-  const addItem = async (description = "New item") => {
+  const addItem = (description = "New item") => {
     setMutationError(null);
-    try {
-      const item = await createQuoteItem({ job_id: jobId, description, sort_order: items.length });
-      queryClient.setQueryData<QuoteItem[]>(["quote-items", jobId], [...items, item]);
-      persistTotals([...items, item]);
-      void logJobEvent({
-        jobId,
-        eventType: "quote_item_added",
-        description: `Added “${item.description || "Untitled item"}”`,
-        metadata: { quote_item_id: item.id, description: item.description, quantity: item.quantity, unit_price: item.unit_price },
-      }).catch(() => undefined);
-    } catch (error) {
-      if (error instanceof QuoteBelowPaidError) {
-        retryRef.current = async () => {
-          const retryItem = await createQuoteItem({ job_id: jobId, description, sort_order: items.length });
-          queryClient.setQueryData<QuoteItem[]>(["quote-items", jobId], (current = []) => [...current, retryItem]);
-        };
-        setMutationError(error);
-        setOverpaymentDialogOpen(true);
-      }
-    }
+    if (!editing) startEditing();
+    setDraftItems((current) => [...current, {
+      id: `draft-${crypto.randomUUID()}`,
+      job_id: jobId,
+      user_id: "",
+      description,
+      quantity: 1,
+      unit_price: 0,
+      sort_order: current.length,
+      vat_applicable: false,
+      vat_rate: VAT_STANDARD,
+      price_includes_vat: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    }]);
   };
 
-  const removeItem = async (id: string) => {
+  const removeItem = (id: string) => {
     setMutationError(null);
-    try {
-      await deleteQuoteItem(id);
-      queryClient.setQueryData<QuoteItem[]>(["quote-items", jobId], items.filter((item) => item.id !== id));
-      persistTotals(items.filter((item) => item.id !== id));
-      const deletedItem = items.find((item) => item.id === id);
-      void logJobEvent({
-        jobId,
-        eventType: "quote_item_removed",
-        description: `Deleted “${deletedItem?.description || "Untitled item"}”`,
-        metadata: { quote_item_id: id, description: deletedItem?.description },
-      }).catch(() => undefined);
-    } catch (error) {
-      if (error instanceof QuoteBelowPaidError) {
-        retryRef.current = async () => {
-          await deleteQuoteItem(id);
-          queryClient.setQueryData<QuoteItem[]>(["quote-items", jobId], (current = []) => current.filter((item) => item.id !== id));
-        };
-        setMutationError(error);
-        setOverpaymentDialogOpen(true);
-      }
-    }
+    setDraftItems((current) => current.filter((item) => item.id !== id));
   };
 
   const saveRevision = async () => {
     setSavingRevision(true);
     try {
-      const currentItems = queryClient.getQueryData<QuoteItem[]>(["quote-items", jobId]) ?? [];
+      const currentItems = draftItems;
+      const originalById = new Map(items.map((item) => [item.id, item]));
+      const savedItems: QuoteItem[] = [];
       for (const item of currentItems) {
-        await updateQuoteItem(item.id, {
+        const input = {
           description: item.description,
           quantity: Number(item.quantity),
           unit_price: Number(item.unit_price),
           vat_applicable: item.vat_applicable,
           vat_rate: Number(item.vat_rate ?? VAT_STANDARD),
           price_includes_vat: item.price_includes_vat,
-        });
+        };
+        const saved = item.id.startsWith("draft-")
+          ? await createQuoteItem({ job_id: jobId, ...input, sort_order: item.sort_order })
+          : await updateQuoteItem(item.id, input);
+        savedItems.push(saved);
       }
-      persistTotals(currentItems);
+      for (const item of items) {
+        if (!currentItems.some((draft) => draft.id === item.id)) {
+          await deleteQuoteItem(item.id);
+        }
+      }
+      await queryClient.invalidateQueries({ queryKey: ["quote-items", jobId] });
+      persistTotals(savedItems);
       const revision = await saveQuoteRevision(jobId);
       await queryClient.invalidateQueries({ queryKey: ["quote-revisions", jobId] });
       setEditing(false);
-      window.alert(`Revision ${revision.revision} saved.`);
+      setDraftItems([]);
+      const changedCount = currentItems.filter((item) => {
+        const original = originalById.get(item.id);
+        return !original || original.description !== item.description || original.quantity !== item.quantity || original.unit_price !== item.unit_price;
+      }).length + items.filter((item) => !currentItems.some((draft) => draft.id === item.id)).length;
+      void logJobEvent({
+        jobId,
+        eventType: "quote_revised",
+        description: `Quote updated - ${changedCount} item${changedCount === 1 ? "" : "s"} changed`,
+        metadata: { revision: revision.revision, total: revision.total, changed_count: changedCount },
+      }).catch(() => undefined);
     } catch (error) {
       if (error instanceof QuoteBelowPaidError) {
         setMutationError(error);
@@ -232,12 +205,13 @@ export function QuoteSection({
           <p className="mt-1 text-sm text-slate-400">Build the line items for this job.</p>
         </div>
         <div className="flex items-center gap-2">
-          {items.length > 0 && jobStatus !== "enquiry" && jobStatus !== "paid" && <button type="button" onClick={() => setEditing(true)} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800">Edit quote</button>}
+          {jobStatus !== "paid" && !editing && <button type="button" onClick={startEditing} className="rounded-lg border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-200 hover:bg-slate-800">Edit quote</button>}
+          {editing && <button type="button" onClick={cancelEditing} className="rounded-lg p-2 text-slate-400 hover:bg-slate-800 hover:text-white" aria-label="Exit quote editing"><X size={18} /></button>}
           <span className="text-sm font-semibold text-sky-300">{money.format(total)}</span>
         </div>
       </div>
 
-      {presets.length > 0 && (
+      {editing && presets.length > 0 && (
         <div className="mb-5 flex flex-wrap gap-2">
           {presets.map((preset) => (
             <button key={preset} type="button" onClick={() => void addItem(preset)} className="rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-sky-500 hover:text-sky-300">
@@ -258,13 +232,13 @@ export function QuoteSection({
       {!isLoading && !items.length && <p className="mb-5 text-sm text-slate-400">No quote items yet. Add your first line item.</p>}
 
       <div className="space-y-3">
-        {items.map((item) => (
+        {displayedItems.map((item) => (
           <div key={item.id} className="grid grid-cols-[minmax(0,1fr)_4.5rem_6.5rem_auto_auto] items-center gap-2">
-            <input disabled={!editing} value={item.description} onChange={(event) => changeItem(item, "description", event.target.value)} className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white disabled:opacity-70" aria-label="Description" />
-            <input disabled={!editing} type="number" min="0" step="1" inputMode="decimal" value={item.quantity} onFocus={(event) => event.target.select()} onChange={(event) => changeItem(item, "quantity", event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-white disabled:opacity-70" aria-label="Quantity" />
-            <input disabled={!editing} type="number" min="0" step="1" inputMode="decimal" value={item.unit_price} onFocus={(event) => event.target.select()} onChange={(event) => changeItem(item, "unit_price", event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-white disabled:opacity-70" aria-label="Unit price" />
+            {editing ? <input value={item.description} onChange={(event) => changeItem(item, "description", event.target.value)} className="min-w-0 rounded-lg border border-slate-700 bg-slate-950 px-2.5 py-2 text-sm text-white" aria-label="Description" /> : <span className="min-w-0 truncate text-sm text-slate-200">{item.description}</span>}
+            {editing ? <input type="number" min="0" step="1" inputMode="decimal" value={item.quantity} onFocus={(event) => event.target.select()} onChange={(event) => changeItem(item, "quantity", event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-white" aria-label="Quantity" /> : <span className="text-sm text-slate-300">{item.quantity}</span>}
+            {editing ? <input type="number" min="0" step="1" inputMode="decimal" value={item.unit_price} onFocus={(event) => event.target.select()} onChange={(event) => changeItem(item, "unit_price", event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 px-2 py-2 text-sm text-white" aria-label="Unit price" /> : <span className="text-sm text-slate-300">{money.format(Number(item.unit_price))}</span>}
             <span className="text-right text-sm text-slate-200">{money.format(Number(item.quantity) * Number(item.unit_price))}</span>
-            <button disabled={!editing} type="button" onClick={() => void removeItem(item.id)} className="p-2 text-slate-500 hover:text-red-400 disabled:opacity-40" aria-label="Delete quote item"><Trash2 size={16} /></button>
+            {editing && <button type="button" onClick={() => removeItem(item.id)} className="p-2 text-slate-500 hover:text-red-400" aria-label="Delete quote item"><Trash2 size={16} /></button>}
             {vatRegistered && editing && <div className="col-span-full flex flex-wrap items-center gap-3 text-xs text-slate-300">
               <label className="inline-flex items-center gap-2"><input type="checkbox" checked={item.vat_applicable ?? false} onChange={(event) => changeItem(item, "vat_applicable", event.target.checked)} /> VAT applies to this item</label>
               {!!item.vat_applicable && <select value={item.vat_rate ?? VAT_STANDARD} onChange={(event) => changeItem(item, "vat_rate", event.target.value)} className="rounded-lg border border-slate-700 bg-slate-950 px-2 py-1.5 text-white"><option value={VAT_STANDARD}>16%</option><option value={VAT_FUEL}>8%</option><option value={VAT_ZERO}>0%</option></select>}
@@ -276,8 +250,9 @@ export function QuoteSection({
 
       <div className="mt-5 flex items-center justify-between border-t border-slate-800 pt-4">
         <div className="flex gap-2">
-          <button disabled={!editing} type="button" onClick={() => void addItem()} className="rounded-xl border border-sky-500/60 px-4 py-2.5 text-sm font-semibold text-sky-300 hover:bg-sky-500/10 disabled:opacity-40">Add item</button>
-          {editing && jobStatus !== "enquiry" && <button disabled={savingRevision} type="button" onClick={() => void saveRevision()} className="rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{savingRevision ? "Saving..." : "Save revision"}</button>}
+          {editing && <button type="button" onClick={() => addItem()} className="rounded-xl border border-sky-500/60 px-4 py-2.5 text-sm font-semibold text-sky-300 hover:bg-sky-500/10">Add item</button>}
+          {editing && <button disabled={savingRevision} type="button" onClick={() => void saveRevision()} className="inline-flex items-center gap-2 rounded-xl bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"><Save size={16} />{savingRevision ? "Saving..." : "Save"}</button>}
+          {editing && <button type="button" onClick={cancelEditing} className="rounded-xl border border-slate-700 px-4 py-2.5 text-sm font-semibold text-slate-300 hover:bg-slate-800">Cancel</button>}
         </div>
         <div className="text-right text-sm text-slate-300">{totals.vat_total > 0 && <><p>Subtotal: {money.format(totals.subtotal)}</p><p>VAT: {money.format(totals.vat_total)}</p></>}<p className="mt-1 text-lg font-bold text-white">Total: {money.format(total)}</p></div>
       </div>
@@ -294,6 +269,7 @@ export function QuoteSection({
           jobStatus={jobStatus}
           hasValidItems={hasValidItems}
         />
+        {!hasValidItems && <p className="mt-2 text-xs text-amber-300">Complete all line items before sending</p>}
       </div>}
       {overpaymentDialogOpen && mutationError && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/80 p-4" role="dialog" aria-modal="true" aria-labelledby="quote-paid-dialog-title">
