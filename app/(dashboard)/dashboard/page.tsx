@@ -1,3 +1,15 @@
+"use client";
+import Link from "next/link";
+import { ArrowRight, BriefcaseBusiness, Clock3, MessageCircle, Users } from "lucide-react";
+import { useEffect, useState } from "react";
+import { getCustomers } from "@/lib/queries/customers";
+import { getJobs } from "@/lib/queries/jobs";
+import type { Customer, JobWithCustomer } from "@/types";
 export default function Dashboard() {
-  return <><p className="text-sm font-medium text-sky-400">FundiOS</p><h1 className="mt-2 text-3xl font-bold">Dashboard</h1><p className="mt-2 text-slate-400">Welcome to FundiOS</p></>;
+  const [jobs, setJobs] = useState<JobWithCustomer[]>([]); const [customers, setCustomers] = useState<Customer[]>([]); const [enquiries, setEnquiries] = useState(0);
+  useEffect(() => { Promise.all([getJobs(), getCustomers()]).then(([j, c]) => { setJobs(j); setCustomers(c); const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000; setEnquiries(j.filter((job) => job.status === "enquiry" && new Date(job.created_at).getTime() >= sevenDaysAgo).length); }); }, []);
+  const active = jobs.filter((j) => j.status !== "paid").length;
+  const inProgress = jobs.filter((j) => j.status === "in_progress").length;
+  return <div className="space-y-7"><div><p className="text-sm font-medium text-sky-400">FundiOS</p><h1 className="mt-2 text-3xl font-bold text-white">Good morning</h1><p className="mt-2 text-slate-400">Here’s what’s moving in your business.</p></div><div className="grid grid-cols-2 gap-3 sm:grid-cols-4"><Summary icon={BriefcaseBusiness} label="Active Jobs" value={active} /><Summary icon={Clock3} label="In Progress" value={inProgress} /><Summary icon={MessageCircle} label="New Enquiries" value={enquiries} /><Summary icon={Users} label="Total Customers" value={customers.length} /></div><section><div className="mb-3 flex items-center justify-between"><h2 className="text-lg font-semibold text-white">Recent Jobs</h2><Link href="/jobs" className="inline-flex items-center gap-1 text-sm text-sky-400 hover:text-sky-300">View all <ArrowRight size={15} /></Link></div>{jobs.slice(0, 5).map((job) => <Link key={job.id} href={`/jobs/${job.id}`} className="mb-3 block rounded-2xl border border-slate-800 bg-slate-900/70 p-4 hover:border-sky-500/40"><div className="flex justify-between gap-3"><div><p className="font-semibold text-white">{job.title}</p><p className="mt-1 text-sm text-slate-400">{job.customer?.name}</p></div><span className="text-xs text-sky-300">{job.status.replace("_", " ")}</span></div><div className="mt-3 h-1.5 rounded-full bg-slate-800"><div className="h-full rounded-full bg-sky-500" style={{ width: `${job.progress_percent}%` }} /></div></Link>)}{!jobs.length && <div className="rounded-2xl border border-dashed border-slate-700 p-8 text-center text-sm text-slate-400">No jobs yet. <Link href="/jobs/new" className="text-sky-400 hover:underline">Create your first job</Link>.</div>}</section></div>;
 }
+function Summary({ icon: Icon, label, value }: { icon: typeof Users; label: string; value: number }) { return <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"><Icon size={18} className="text-sky-400" /><p className="mt-4 text-2xl font-bold text-white">{value}</p><p className="mt-1 text-xs text-slate-400">{label}</p></div>; }

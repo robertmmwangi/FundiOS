@@ -25,7 +25,7 @@ export function BottomNav() {
               <button aria-label="Close" onClick={() => setOpen(false)}><X size={18} /></button>
             </div>
             <Link href="/jobs/new" className="block rounded-xl p-3 text-slate-100 hover:bg-slate-700">New Job</Link>
-            <Link href="/customers/new" className="block rounded-xl p-3 text-slate-100 hover:bg-slate-700">New Customer</Link>
+            <Link href="/customers?new=1" className="block rounded-xl p-3 text-slate-100 hover:bg-slate-700">New Customer</Link>
           </div>
         </div>
       )}
