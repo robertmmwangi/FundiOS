@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { MoreHorizontal, Plus } from "lucide-react";
+import { AlertTriangle, MoreHorizontal, Plus } from "lucide-react";
 
 import { deletePayment, getJobFinancials, getPaymentsForJob } from "@/lib/queries/payments";
 import { PAYMENT_METHOD_LABELS, type Payment, type JobStatus } from "@/types";
@@ -50,6 +50,8 @@ export function PaymentsSection({
   const [savedMessage, setSavedMessage] = useState(false);
   const [formOpen, setFormOpen] = useState(() => Boolean(autoOpen || (typeof window !== "undefined" && new URLSearchParams(window.location.search).get("payment") === "new")));
   const [editingPayment, setEditingPayment] = useState<Payment | undefined>();
+  const [refundOpen, setRefundOpen] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
   const paymentsQuery = useQuery({
     queryKey: ["payments", jobId],
     queryFn: () => getPaymentsForJob(jobId),
@@ -60,6 +62,7 @@ export function PaymentsSection({
   });
   const payments = paymentsQuery.data ?? [];
   const financials = financialsQuery.data;
+  const overpayment = Math.max((financials?.net_paid ?? 0) - (financials?.total_quoted ?? 0), 0);
   const showDepositHint = jobStatus === "quoted";
 
   async function removePayment(payment: Payment) {
@@ -85,6 +88,16 @@ export function PaymentsSection({
     window.setTimeout(() => setSavedMessage(false), 2500);
   }
 
+  function addItemsToQuote() {
+    window.dispatchEvent(new CustomEvent("fundios:edit-quote"));
+    document.getElementById("quote-section")?.scrollIntoView({ behavior: "smooth" });
+  }
+
+  function leaveAsCredit() {
+    setToast("Credit holding coming in a later stage");
+    window.setTimeout(() => setToast(null), 3000);
+  }
+
   return (
     <section className="rounded-3xl border border-slate-800 bg-slate-900/80 p-5 sm:p-7">
       <div className="mb-5 flex items-start justify-between gap-4">
@@ -101,6 +114,23 @@ export function PaymentsSection({
           Record Payment
         </button>
       </div>
+
+      {overpayment > 0 && (
+        <div className="mb-5 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={20} className="mt-0.5 shrink-0 text-amber-300" />
+            <div className="min-w-0">
+              <p className="font-semibold text-amber-200">This job is overpaid by {money.format(overpayment)}</p>
+              <p className="mt-1 text-sm text-amber-100/80">The customer has paid more than the current quote total. Resolve this by:</p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button type="button" onClick={addItemsToQuote} className="rounded-lg bg-amber-400/20 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-400/30">Add items to quote</button>
+                <button type="button" onClick={() => setRefundOpen(true)} className="rounded-lg bg-rose-500/20 px-3 py-2 text-sm font-semibold text-rose-200 hover:bg-rose-500/30">Issue refund</button>
+                <button type="button" onClick={leaveAsCredit} className="rounded-lg border border-amber-500/30 px-3 py-2 text-sm font-semibold text-amber-100 hover:bg-amber-500/10">Leave as credit</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className={`grid gap-3 ${financials?.total_refunded ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
         <div className="rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-4">
@@ -124,9 +154,9 @@ export function PaymentsSection({
               : "border-slate-700 bg-slate-950/30"
           }`}
         >
-          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">Balance</p>
-          <p className={`mt-2 text-2xl font-bold ${(financials?.balance ?? 0) > 0 ? "text-amber-300" : "text-slate-300"}`}>
-            {financialsQuery.isLoading ? "—" : money.format(Math.max(financials?.balance ?? 0, 0))}
+          <p className="text-xs font-medium uppercase tracking-wider text-slate-500">{overpayment > 0 ? "Overpaid" : "Balance"}</p>
+          <p className={`mt-2 text-2xl font-bold ${overpayment > 0 ? "text-amber-300" : (financials?.balance ?? 0) > 0 ? "text-amber-300" : "text-slate-300"}`}>
+            {financialsQuery.isLoading ? "—" : overpayment > 0 ? `-${money.format(overpayment)}` : money.format(Math.max(financials?.balance ?? 0, 0))}
           </p>
         </div>
       </div>
@@ -191,7 +221,9 @@ export function PaymentsSection({
           </div>
         ))}
       </div>
-      <PaymentFormSheet open={formOpen} jobId={jobId} balance={financials?.balance} payment={editingPayment} onClose={() => { setFormOpen(false); setEditingPayment(undefined); }} onSaved={() => void refreshAfterSave()} />
+      <PaymentFormSheet open={formOpen} jobId={jobId} balance={financials?.balance} outstandingBalance={financials?.balance} payment={editingPayment} onClose={() => { setFormOpen(false); setEditingPayment(undefined); }} onSaved={() => void refreshAfterSave()} />
+      <PaymentFormSheet open={refundOpen} jobId={jobId} mode="refund" initialAmount={overpayment} outstandingBalance={financials?.balance} onClose={() => setRefundOpen(false)} onSaved={() => void refreshAfterSave()} />
+      {toast && <div role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl border border-slate-700 bg-slate-900 px-4 py-3 text-sm font-medium text-white shadow-xl">{toast}</div>}
     </section>
   );
 }

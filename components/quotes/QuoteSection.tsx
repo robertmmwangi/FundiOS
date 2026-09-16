@@ -82,6 +82,14 @@ export function QuoteSection({
     });
   }, []);
 
+  useEffect(() => {
+    const handler = () => {
+      if (!editing) startEditing();
+    };
+    window.addEventListener("fundios:edit-quote", handler);
+    return () => window.removeEventListener("fundios:edit-quote", handler);
+  }, [editing, items]);
+
   const presets = getPresetsForTrade(tradeType);
   const displayedItems = editing ? draftItems : items;
   const totals = calculateQuoteTotals(displayedItems);

@@ -5,7 +5,14 @@ import { useForm, useWatch } from "react-hook-form";
 import { z } from "zod";
 
 import { createPayment, createRefund, updatePayment } from "@/lib/queries/payments";
+import { logJobEvent } from "@/lib/queries/job-events";
 import { ACTIVE_PAYMENT_METHODS, PAYMENT_METHOD_LABELS, type Payment, type PaymentMethod } from "@/types";
+
+const money = new Intl.NumberFormat("en-KE", {
+  style: "currency",
+  currency: "KES",
+  maximumFractionDigits: 0,
+});
 
 const schema = z.object({
   amount: z.string().trim().min(1, "Amount is required.").refine((value) => Number(value.replace(/[^\d.-]/g, "")) > 0, "Amount must be greater than zero."),
@@ -26,10 +33,15 @@ function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function paymentMethodLabel(method: PaymentMethod) {
+  return method === "mpesa" ? "M-Pesa" : method.charAt(0).toUpperCase() + method.slice(1);
+}
+
 export function PaymentFormSheet({
   open,
   jobId,
   balance,
+  outstandingBalance,
   initialAmount,
   mode = "payment",
   payment,
@@ -39,6 +51,7 @@ export function PaymentFormSheet({
   open: boolean;
   jobId: string;
   balance?: number;
+  outstandingBalance?: number;
   initialAmount?: number;
   mode?: "payment" | "refund";
   payment?: Payment;
@@ -61,9 +74,16 @@ export function PaymentFormSheet({
     },
   });
   const method = useWatch({ control, name: "method" });
+  const amountValue = useWatch({ control, name: "amount" });
+  const parsedAmount = parseAmount(amountValue ?? "");
+  const balanceForWarning = Math.max(outstandingBalance ?? balance ?? 0, 0);
+  const overpayment = parsedAmount - balanceForWarning;
+  const hasOverpayment = mode === "payment" && balanceForWarning >= 0 && overpayment > 1;
 
   async function submit(values: Values) {
     const amount = parseAmount(values.amount);
+    const balanceForWarning = Math.max(outstandingBalance ?? balance ?? 0, 0);
+    const overpaymentAmount = amount - balanceForWarning;
     const input = {
       amount,
       method: values.method,
@@ -74,7 +94,19 @@ export function PaymentFormSheet({
     if (mode === "refund") {
       await createRefund({ job_id: jobId, amount, method: values.method, reference: input.reference, reason: values.reason?.trim() ?? "" });
     } else if (payment) await updatePayment(payment.id, input);
-    else await createPayment({ job_id: jobId, ...input });
+    else {
+      await createPayment({ job_id: jobId, ...input });
+      if (overpaymentAmount > 1) {
+        const reference = input.reference ? ` (${input.reference})` : "";
+        void logJobEvent({
+          jobId,
+          eventType: "payment_received",
+          description: `Payment of ${money.format(amount)} via ${paymentMethodLabel(values.method)}${reference} - OVERPAYMENT of ${money.format(overpaymentAmount)}`,
+          amount,
+          metadata: { amount, method: values.method, reference: input.reference, overpayment: overpaymentAmount },
+        }).catch(() => undefined);
+      }
+    }
     reset();
     onSaved?.();
     onClose();
@@ -101,6 +133,13 @@ export function PaymentFormSheet({
             <label className="mb-2 block text-sm font-medium text-slate-200">Amount</label>
             <input {...register("amount")} inputMode="decimal" placeholder="KSh 85,000" className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white" />
             {errors.amount && <p className="mt-1 text-sm text-red-400">{errors.amount.message}</p>}
+            {hasOverpayment && (
+              <div className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-200">
+                <p>This payment ({money.format(parsedAmount)}) exceeds the outstanding balance ({money.format(balanceForWarning)}).</p>
+                <p className="mt-1">Overpayment: {money.format(overpayment)}</p>
+                <p className="mt-2 font-semibold">Are you sure you want to proceed?</p>
+              </div>
+            )}
           </div>
           <div>
             <p className="mb-2 text-sm font-medium text-slate-200">Method</p>
@@ -120,7 +159,7 @@ export function PaymentFormSheet({
             <input {...register("paid_at")} type="date" max={today()} className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-white" />
             {errors.paid_at && <p className="mt-1 text-sm text-red-400">{errors.paid_at.message}</p>}
           </div>
-          <button disabled={isSubmitting} className={`w-full rounded-xl px-4 py-3 font-semibold text-white disabled:opacity-50 ${mode === "refund" ? "bg-rose-500" : "bg-sky-500"}`}>{isSubmitting ? "Saving..." : mode === "refund" ? "Record refund" : payment ? "Save changes" : "Record payment"}</button>
+          <button disabled={isSubmitting} className={`w-full rounded-xl px-4 py-3 font-semibold text-white disabled:opacity-50 ${mode === "refund" ? "bg-rose-500" : "bg-sky-500"}`}>{isSubmitting ? "Saving..." : mode === "refund" ? "Record refund" : hasOverpayment ? "Yes, record payment" : payment ? "Save changes" : "Record payment"}</button>
         </form>
       </div>
     </div>
