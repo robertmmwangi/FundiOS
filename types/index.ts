@@ -1,10 +1,10 @@
 export type JobStatus =
   | "enquiry"
   | "quoted"
+  | "invoiced"
   | "deposit_paid"
   | "in_progress"
   | "completed"
-  | "invoiced"
   | "paid";
 
 export interface Customer {
@@ -101,6 +101,44 @@ export interface QuoteRevision {
   created_at: string;
 }
 
+export interface InvoiceItem {
+  id: string;
+  description: string;
+  quantity: number;
+  unit_price: number;
+  sort_order: number;
+  vat_applicable: boolean;
+  vat_rate: number;
+  price_includes_vat: boolean;
+}
+
+export interface Invoice {
+  id: string;
+  job_id: string;
+  user_id: string;
+  invoice_number: string;
+  revision: number;
+  issued_at: string;
+  due_at: string | null;
+  subtotal: number;
+  vat_total: number;
+  total: number;
+  vat_inclusive: boolean;
+  notes: string | null;
+  snapshot: InvoiceItem[];
+  is_revised: boolean;
+  revised_from_id: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface InvoiceWithContext extends Invoice {
+  job: { id: string; title: string } | null;
+  customer: { id: string; name: string } | null;
+}
+
 export interface PublicQuote {
   job: {
     id: string;
@@ -133,6 +171,17 @@ export interface PublicQuote {
   customer: {
     name: string;
   };
+  invoice: {
+    id: string;
+    invoice_number: string;
+    revision: number;
+    issued_at: string;
+    subtotal: number;
+    vat_total: number;
+    total: number;
+    vat_inclusive: boolean;
+    notes: string | null;
+  } | null;
 }
 
 // Active methods - shown in UI today
@@ -165,7 +214,13 @@ export interface Payment {
   updated_at: string;
   is_refund: boolean;
   refund_reason: string | null;
+  receipt_number: string | null;
+  invoice_id: string | null;
+  cancelled_at: string | null;
+  cancelled_reason: string | null;
 }
+
+export interface Receipt extends Payment {}
 
 export interface PaymentWithContext extends Payment {
   customer: { id: string; name: string } | null;

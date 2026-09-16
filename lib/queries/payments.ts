@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
-import type { Payment, PaymentMethod, PaymentWithContext, QuoteItem } from "@/types";
+import type { Payment, PaymentMethod, PaymentWithContext, QuoteItem, Receipt } from "@/types";
 
 export type PaymentInput = {
   job_id: string;
@@ -9,6 +9,7 @@ export type PaymentInput = {
   reference?: string | null;
   note?: string | null;
   paid_at?: string;
+  invoice_id?: string | null;
 };
 
 export type PaymentUpdate = Partial<
@@ -59,6 +60,18 @@ export async function getPaymentsForJob(jobId: string): Promise<Payment[]> {
   }
 
   return (data ?? []) as Payment[];
+}
+
+export async function getReceiptsForJob(jobId: string): Promise<Receipt[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .select("*")
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`Unable to load receipts: ${error.message}`);
+  return (data ?? []) as Receipt[];
 }
 
 export async function getPaymentsWithContext(): Promise<PaymentWithContext[]> {
@@ -117,6 +130,19 @@ export async function updatePayment(id: string, input: PaymentUpdate): Promise<P
   return data as Payment;
 }
 
+export async function cancelPayment(id: string, reason: string): Promise<Payment> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from("payments")
+    .update({ cancelled_at: new Date().toISOString(), cancelled_reason: reason })
+    .eq("id", id)
+    .select()
+    .single();
+
+  if (error) throw new Error(`Unable to cancel payment: ${error.message}`);
+  return data as Payment;
+}
+
 export async function deletePayment(id: string): Promise<void> {
   const supabase = createClient();
   const { error } = await supabase.from("payments").delete().eq("id", id);
@@ -134,9 +160,10 @@ export async function getJobFinancials(jobId: string): Promise<{
   balance: number;
 }> {
   const supabase = createClient();
-  const [{ data: quoteItems, error: quoteError }, { data: payments, error: paymentError }] = await Promise.all([
+  const [{ data: quoteItems, error: quoteError }, { data: payments, error: paymentError }, { data: invoices, error: invoiceError }] = await Promise.all([
     supabase.from("quote_items").select("quantity, unit_price").eq("job_id", jobId),
-    supabase.from("payments").select("amount, is_refund").eq("job_id", jobId),
+    supabase.from("payments").select("amount, is_refund, cancelled_at").eq("job_id", jobId),
+    supabase.from("invoices").select("total, cancelled_at").eq("job_id", jobId).is("cancelled_at", null).order("revision", { ascending: false }).limit(1).maybeSingle(),
   ]);
 
   if (quoteError) {
@@ -146,26 +173,28 @@ export async function getJobFinancials(jobId: string): Promise<{
   if (paymentError) {
     throw new Error(`Unable to load paid total: ${paymentError.message}`);
   }
+  if (invoiceError) throw new Error(`Unable to load invoice total: ${invoiceError.message}`);
 
   const total_quoted = ((quoteItems ?? []) as Pick<QuoteItem, "quantity" | "unit_price">[]).reduce(
     (sum, item) => sum + Number(item.quantity) * Number(item.unit_price),
     0,
   );
-  const total_paid = ((payments ?? []) as Pick<Payment, "amount" | "is_refund">[]).reduce(
+  const activePayments = (payments ?? []).filter((payment) => !payment.cancelled_at) as Pick<Payment, "amount" | "is_refund">[];
+  const total_paid = activePayments.reduce(
     (sum, payment) => sum + (payment.is_refund ? 0 : Number(payment.amount)),
     0,
   );
-  const total_refunded = ((payments ?? []) as Pick<Payment, "amount" | "is_refund">[]).reduce(
+  const total_refunded = activePayments.reduce(
     (sum, payment) => sum + (payment.is_refund ? Number(payment.amount) : 0),
     0,
   );
   const net_paid = total_paid - total_refunded;
 
   return {
-    total_quoted,
+    total_quoted: invoices?.total != null ? Number(invoices.total) : total_quoted,
     total_paid,
     total_refunded,
     net_paid,
-    balance: total_quoted - net_paid,
+    balance: (invoices?.total != null ? Number(invoices.total) : total_quoted) - net_paid,
   };
 }
