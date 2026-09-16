@@ -42,3 +42,8 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 !.env.local.example
+
+# next-pwa build artifacts
+public/fallback-*.js
+public/sw.js
+public/workbox-*.js

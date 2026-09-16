@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { BarChart3, Briefcase, Home, Plus, TrendingDown, TrendingUp, Wallet, X } from "lucide-react";
 import { useEffect, useState } from "react";
+import { getJobs } from "@/lib/queries/jobs";
+import type { JobWithCustomer } from "@/types";
 
 const tabs = [
   { label: "Dashboard", href: "/dashboard", icon: Home },
@@ -16,6 +18,7 @@ export function BottomNav() {
   const pathname = usePathname();
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [incomeJobs, setIncomeJobs] = useState<JobWithCustomer[] | null>(null);
   useEffect(() => {
     if (!open) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -28,6 +31,16 @@ export function BottomNav() {
   function goTo(href: string) {
     setOpen(false);
     router.push(href);
+  }
+
+  async function chooseIncome() {
+    const jobs = (await getJobs()).filter((job) => job.status !== "paid");
+    if (jobs.length === 1) {
+      goTo(`/jobs/${jobs[0].id}?payment=new`);
+    } else {
+      setOpen(false);
+      setIncomeJobs(jobs);
+    }
   }
 
   return (
@@ -43,9 +56,26 @@ export function BottomNav() {
             <button type="button" onClick={() => goTo("/customers?new=1")} className="block w-full rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700">New Customer</button>
             <div className="my-2 border-t border-slate-700 pt-2">
               <p className="px-3 pb-1 text-xs uppercase tracking-wider text-slate-500">Money</p>
-              <button type="button" onClick={() => goTo("/finance?new=income")} className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700"><TrendingUp size={18} className="text-emerald-400" />Record Income</button>
+              <button type="button" onClick={() => void chooseIncome()} className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700"><TrendingUp size={18} className="text-emerald-400" />Record Income</button>
               <button type="button" onClick={() => goTo("/finance?new=expense")} className="flex w-full items-center gap-3 rounded-xl p-3 text-left text-slate-100 hover:bg-slate-700"><TrendingDown size={18} className="text-red-400" />Record Expense</button>
             </div>
+          </div>
+        </div>
+      )}
+      {incomeJobs && (
+        <div className="fixed inset-0 z-50 bg-slate-950/70" onClick={() => setIncomeJobs(null)}>
+          <div className="absolute bottom-24 left-1/2 w-[min(24rem,calc(100%-2rem))] -translate-x-1/2 rounded-2xl border border-slate-700 bg-slate-800 p-4 shadow-2xl" onClick={(event) => event.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between text-sm font-semibold text-white">
+              <span>Select a job</span>
+              <button type="button" onClick={() => setIncomeJobs(null)} aria-label="Close"><X size={18} /></button>
+            </div>
+            {!incomeJobs.length && <p className="p-3 text-sm text-slate-400">No active jobs available.</p>}
+            {incomeJobs.map((job) => (
+              <button key={job.id} type="button" onClick={() => { setIncomeJobs(null); goTo(`/jobs/${job.id}?payment=new`); }} className="block w-full rounded-xl p-3 text-left hover:bg-slate-700">
+                <p className="font-semibold text-white">{job.title}</p>
+                <p className="mt-1 text-xs text-slate-400">{job.customer?.name}</p>
+              </button>
+            ))}
           </div>
         </div>
       )}
